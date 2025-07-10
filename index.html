@@ -51,8 +51,14 @@
       border-radius: 8px;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
-    button {
+    .nav {
       margin-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 700px;
+    }
+    button {
       padding: 10px 20px;
       font-size: 16px;
       cursor: pointer;
@@ -61,35 +67,76 @@
       background-color: #007bff;
       color: white;
     }
+    .page-toggle {
+      margin-top: 30px;
+    }
   </style>
 </head>
 <body>
   <h1>Eating Tracker Calendar</h1>
+  <div class="nav">
+    <button onclick="changeMonth(-1)">&#8592; Prev</button>
+    <h2 id="monthTitle"></h2>
+    <button onclick="changeMonth(1)">Next &#8594;</button>
+  </div>
   <div class="calendar" id="calendar"></div>
   <div class="stats" id="stats"></div>
-  <button onclick="saveToGoogle()">Save to Google Sheets</button>
+  <div class="page-toggle">
+    <button onclick="showStatsPage()">Advanced Stats</button>
+    <button onclick="saveToBin()">Save to Cloud</button>
+    <button onclick="loadFromBin()">Load from Cloud</button>
+  </div>
 
   <script>
     const calendar = document.getElementById('calendar');
     const stats = document.getElementById('stats');
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const dataKey = `eatingTracker-${year}-${month}`;
-    const apiURL = 'https://script.google.com/macros/s/AKfycbwEqkgm0pnzNqs1ZLuN_l7W4oB2jYPQiVQFyG-Q2r2Got0OLmvOd5R-jMjKjU0oigqfPw/exec';
-
+    const monthTitle = document.getElementById('monthTitle');
+    let current = new Date();
     let dayData = {};
 
+    const binId = '6870464d988f5178481b415d';
+    const apiKey = '$2a$10$u.aKCLbHUMDyzxLx8lE/XuZ5pX8lYF1IlQGjmGnGVWJbwVOTM3qe2';
+    const binURL = `https://api.jsonbin.io/v3/b/${binId}`;
+
+    function getMonthKey(year, month) {
+      return `${year}-${month}`;
+    }
+
     function updateStats() {
-      const values = Object.values(dayData);
-      const good = values.filter(v => v === 'good').length;
-      const bad = values.filter(v => v === 'bad').length;
-      stats.innerHTML = `✅ Good Days: ${good} | ❌ Bad Days: ${bad} | 🔢 Total Tracked: ${good + bad}`;
+      const allValues = Object.entries(dayData);
+      const monthKey = getMonthKey(current.getFullYear(), current.getMonth() + 1);
+      const monthValues = allValues.filter(([k]) => k.startsWith(monthKey));
+
+      const good = monthValues.filter(([_, v]) => v === 'good').length;
+      const bad = monthValues.filter(([_, v]) => v === 'bad').length;
+      const streak = calculateStreak(monthValues);
+
+      stats.innerHTML = `✅ Good Days: ${good} | ❌ Bad Days: ${bad} | 🔢 Total: ${good + bad} | 🔁 Streak: ${streak}`;
+    }
+
+    function calculateStreak(data) {
+      let streak = 0;
+      const sorted = data.sort(([a], [b]) => new Date(a) - new Date(b));
+      for (let i = sorted.length - 1; i >= 0; i--) {
+        if (sorted[i][1] === 'good') streak++;
+        else break;
+      }
+      return streak;
     }
 
     function renderCalendar() {
+      const year = current.getFullYear();
+      const month = current.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
       calendar.innerHTML = '';
+      monthTitle.textContent = current.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+      const startDay = new Date(year, month, 1).getDay();
+      for (let i = 0; i < startDay; i++) {
+        const empty = document.createElement('div');
+        calendar.appendChild(empty);
+      }
+
       for (let i = 1; i <= daysInMonth; i++) {
         const dayEl = document.createElement('div');
         const dateStr = `${year}-${month + 1}-${i}`;
@@ -113,35 +160,68 @@
       }
     }
 
-    function saveToGoogle() {
-      fetch(apiURL, {
-        method: 'POST',
-        body: JSON.stringify(dayData),
+    function changeMonth(offset) {
+      current.setMonth(current.getMonth() + offset);
+      renderCalendar();
+      updateStats();
+    }
+
+    function showStatsPage() {
+      let goodDays = 0, badDays = 0;
+      const byMonth = {};
+
+      for (const [date, status] of Object.entries(dayData)) {
+        if (status === 'good') goodDays++;
+        if (status === 'bad') badDays++;
+        const [y, m] = date.split('-');
+        const key = `${y}-${m}`;
+        byMonth[key] = byMonth[key] || { good: 0, bad: 0 };
+        byMonth[key][status]++;
+      }
+
+      const statsHtml = [`<h2>📊 Advanced Stats</h2>`, `<p>✅ Total Good Days: ${goodDays}</p>`, `<p>❌ Total Bad Days: ${badDays}</p>`];
+      statsHtml.push('<ul>');
+      for (const month in byMonth) {
+        statsHtml.push(`<li><strong>${month}:</strong> ✅ ${byMonth[month].good || 0}, ❌ ${byMonth[month].bad || 0}</li>`);
+      }
+      statsHtml.push('</ul>');
+      stats.innerHTML = statsHtml.join('');
+    }
+
+    function saveToBin() {
+      fetch(binURL, {
+        method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Master-Key': apiKey
+        },
+        body: JSON.stringify(dayData)
+      })
+      .then(res => res.json())
+      .then(() => alert('Saved to cloud!'))
+      .catch(err => alert('Error saving: ' + err));
+    }
+
+    function loadFromBin() {
+      fetch(binURL + '/latest', {
+        headers: {
+          'X-Master-Key': apiKey
         }
       })
-      .then(res => res.text())
-      .then(msg => alert('Saved: ' + msg))
-      .catch(err => alert('Error: ' + err));
+      .then(res => res.json())
+      .then(json => {
+        dayData = json.record;
+        renderCalendar();
+        updateStats();
+      })
+      .catch(err => {
+        console.error('Load error', err);
+        renderCalendar();
+        updateStats();
+      });
     }
 
-    function loadFromGoogle() {
-      fetch(apiURL)
-        .then(res => res.json())
-        .then(data => {
-          dayData = data;
-          renderCalendar();
-          updateStats();
-        })
-        .catch(err => {
-          console.error('Load error', err);
-          renderCalendar();
-          updateStats();
-        });
-    }
-
-    loadFromGoogle();
+    loadFromBin();
   </script>
 </body>
 </html>
