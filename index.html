@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eating Tracker Calendar</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f9f9f9;
+      padding: 20px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      color: #333;
+    }
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+      max-width: 700px;
+      margin-top: 20px;
+    }
+    .day {
+      width: 90px;
+      height: 90px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-direction: column;
+    }
+    .day.good {
+      background-color: #d4edda;
+      border: 2px solid #28a745;
+    }
+    .day.bad {
+      background-color: #f8d7da;
+      border: 2px solid #dc3545;
+    }
+    .stats {
+      margin-top: 30px;
+      padding: 10px 20px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 5px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h1>Eating Tracker Calendar</h1>
+  <div class="calendar" id="calendar"></div>
+  <div class="stats" id="stats"></div>
+  <button onclick="saveToGoogle()">Save to Google Sheets</button>
+
+  <script>
+    const calendar = document.getElementById('calendar');
+    const stats = document.getElementById('stats');
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const dataKey = `eatingTracker-${year}-${month}`;
+    const apiURL = 'https://script.google.com/macros/s/AKfycbwEqkgm0pnzNqs1ZLuN_l7W4oB2jYPQiVQFyG-Q2r2Got0OLmvOd5R-jMjKjU0oigqfPw/exec';
+
+    let dayData = {};
+
+    function updateStats() {
+      const values = Object.values(dayData);
+      const good = values.filter(v => v === 'good').length;
+      const bad = values.filter(v => v === 'bad').length;
+      stats.innerHTML = `✅ Good Days: ${good} | ❌ Bad Days: ${bad} | 🔢 Total Tracked: ${good + bad}`;
+    }
+
+    function renderCalendar() {
+      calendar.innerHTML = '';
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dayEl = document.createElement('div');
+        const dateStr = `${year}-${month + 1}-${i}`;
+        const status = dayData[dateStr];
+
+        dayEl.className = 'day';
+        dayEl.innerHTML = `<strong>${i}</strong>`;
+        if (status) dayEl.classList.add(status);
+
+        dayEl.addEventListener('click', () => {
+          const current = dayData[dateStr];
+          if (!current) dayData[dateStr] = 'good';
+          else if (current === 'good') dayData[dateStr] = 'bad';
+          else delete dayData[dateStr];
+
+          renderCalendar();
+          updateStats();
+        });
+
+        calendar.appendChild(dayEl);
+      }
+    }
+
+    function saveToGoogle() {
+      fetch(apiURL, {
+        method: 'POST',
+        body: JSON.stringify(dayData),
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(res => res.text())
+      .then(msg => alert('Saved: ' + msg))
+      .catch(err => alert('Error: ' + err));
+    }
+
+    function loadFromGoogle() {
+      fetch(apiURL)
+        .then(res => res.json())
+        .then(data => {
+          dayData = data;
+          renderCalendar();
+          updateStats();
+        })
+        .catch(err => {
+          console.error('Load error', err);
+          renderCalendar();
+          updateStats();
+        });
+    }
+
+    loadFromGoogle();
+  </script>
+</body>
+</html>
